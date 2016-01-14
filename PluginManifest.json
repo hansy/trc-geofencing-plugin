@@ -1,0 +1,10 @@
+﻿{
+    // ID must be unique on the gallery
+    "Id": "Geofencing",
+    "Name": "Geofencing",
+    "Author" :  "Hans Yadav",
+    "Website" :  "https://github.com/Voter-Science/TRC-API-Samples",
+    "Description": "Draw area on map to return data of people inside drawn area",        
+    "Version": "1.0.0", // User SemVer
+    "Tags": [ "demo", "geofencing" ]
+}

@@ -1,0 +1,54 @@
+﻿<!DOCTYPE html>
+
+<script src="https://code.jquery.com/jquery-1.11.3.min.js">
+</script>
+
+<style type="text/css">
+    .OkUpload {
+        background-color: #adffb6;
+    }
+
+    .PreUpload {
+        background-color: #ffdada;
+    }
+
+    .OtherUpload {
+        background-color: #c1f8ff;
+    }
+
+    .map {
+        height: 400px;
+        margin: 30px;
+    }
+</style>
+<script src="../GridView/GridView.js"> </script>
+<script src="Geofencing.js"> </script>
+<script src="https://trcanvasdata.blob.core.windows.net/code/trc.js"> </script>
+<script src="https://trcanvasdata.blob.core.windows.net/code/plugin.js"></script>
+
+<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDPEmHsLQ-OQpWL2AsjYwYq55XjW7k1oZY&libraries=drawing,geometry" type="text/javascript"></script>
+
+
+
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Geofencing</title>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <h2>Sheet contents</h2>
+    <h4> 
+        Number of results: 
+        <span id="numRows"> </span>
+    </h2>
+    When you make a change, the cell starts off red. When the change is successfully saved to the server, the cell turns green.
+    <table id="main" border=1>
+      
+    </table>
+
+    <p>Page version: <div id="ver"></div></p>
+</body>
+</html>
