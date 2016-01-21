@@ -1,0 +1,24 @@
+.OkUpload {
+  background-color: #adffb6;
+}
+
+.PreUpload {
+  background-color: #ffdada;
+}
+
+.OtherUpload {
+  background-color: #c1f8ff;
+}
+
+.map {
+  height: 600px;
+}
+
+section {
+  margin: 30px 0;
+}
+
+#walklists th {
+  border-bottom: none;
+}
+
