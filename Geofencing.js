@@ -1,29 +1,110 @@
 var _sheet;
-var _info; // save sheet info for renderSheet func use 
-var _data; // raw sheet data to be reused
+var _info; 
+var _data;
+var _map;
 
 function PluginMain(sheet) {
-  $('#main').empty();
-
   _sheet = sheet;
 
-  trcGetSheetInfo(sheet, function (info) {
+  trcGetSheetInfo(sheet, function(info) {
     _info = info;
 
-    updateNumResults(info.CountRecords);
-
-    // Get sheet Latitude/Longitude to initialize GMap
-    var lat  = info.Latitute;
-    var lng  = info.Longitude;
-    var gmap = initMap(lat, lng);
-
-    initDrawingManager(gmap); // adds drawing capability to map
-
-    trcGetSheetContents(sheet, function (data) {
+    trcGetSheetContents(_sheet, function(data) {
       _data = data;
-      renderSheet(info, data);
+      _map  = initMap(_info.Latitute, _info.Longitude);
+
+      addMarkers();
+      initDrawingManager(_map); // adds drawing capability to map
+
+      trcGetChildSheetInfo(_sheet, function(summary) {
+        initWalklist(summary.Children);
+      });
     });
   });
+}
+
+// loops through sheet records, passing their lat/lng 
+// to 'addMarker' function
+function addMarkers() {
+  var records = _info.CountRecords;
+
+  for (var i = 0; i < records; i++) {
+    var recId = _data["RecId"][i];
+    var lat   = _data["Lat"][i];
+    var lng   = _data["Long"][i];
+    
+    addMarker(lat, lng);
+  }
+}
+
+// Adds existing walklists to sidebar
+// Connects map markers via polyline that are in same walklist
+function initWalklist(children) {
+  for(var i=0; i < children.length; i++) {
+    var child   = children[i];
+    var name    = child.ChildInfo.Name;
+    var numRec  = child.ChildInfo.CountRecords;
+    var sheetId = child.SheetId;
+    var color   = randomColor();
+
+    appendWalklist(name, numRec, color);
+    getChildCoords(child.SheetId, numRec, color);
+  }
+}
+
+// creates polyline connecting map markers
+function addPolyLine(coords, color) {
+  var path = new google.maps.Polyline({
+    path: coords,
+    geodesic: true,
+    strokeColor: color,
+    strokeOpacity: 1.0,
+    strokeWeight: 5
+  });
+
+  path.setMap(_map);
+}
+
+// get coordiates (latitude, longitude) from child records
+function getChildCoords(sheetId, numRec, color) {
+  var childSheetRef = trcGetSheetRef(sheetId, _sheet);
+
+  trcGetSheetContents(childSheetRef, function(data) {
+    var coords = [];
+
+    for(var i=0; i < numRec; i++) {
+      var lat    = data["Lat"][i];
+      var lng    = data["Long"][i];
+      var latlng = new google.maps.LatLng(lat, lng);
+      coords.push(latlng);
+    }
+
+    addPolyLine(coords, color);
+  });
+}
+
+// adds map marker based on last/lng
+function addMarker(lat, lng) {
+  var latLng = new google.maps.LatLng(lat, lng);
+  var marker = new google.maps.Marker({
+    position: latLng,
+    map: _map
+  });
+}
+
+// create walklist
+function createWalklist(name, ids) {
+  trcCreateChildSheet(_sheet, name, ids, function(childSheetRef) {
+    var color = randomColor();
+
+    appendWalklist(name, ids.length, color);
+    getChildCoords(childSheetRef.SheetId, ids.length, color);
+  });
+}
+
+// add walklist to sidebar
+function appendWalklist(name, count, color) {
+  $('#walklists').append("<tr style='border-left: 10px solid "+color+"'><td>"+name+"</td><td>"+count+"</td></tr>")
 }
 
 // Initialize Google Map
@@ -31,7 +112,7 @@ function initMap(lat, lng) {
   var coords = new google.maps.LatLng(lat, lng);
 
   var mapOptions = {
-    zoom: 13,
+    zoom: 16,
     center: coords,
     mapTypeId: google.maps.MapTypeId.ROADMAP
   };
@@ -46,6 +127,7 @@ function initMap(lat, lng) {
   return gmap;
 }
 
+// add drawing capability to map
 function initDrawingManager(map) {
   var drawingManager = new google.maps.drawing.DrawingManager({
     drawingMode: google.maps.drawing.OverlayType.POLYGON,
@@ -55,53 +137,53 @@ function initDrawingManager(map) {
         google.maps.drawing.OverlayType.POLYGON
       ]
     },
+    polygonOptions: {
+      editable: true
+    }
   });
 
   // add event listener for when shape is drawn
   google.maps.event.addListener(drawingManager, 'overlaycomplete', function(event) {
-    $('#main').empty();
-    updateSheet(_info, _data, event.overlay);
+    var walklistName = prompt("Name of walklist");
+
+    if (walklistName === undefined || walklistName === "") {
+      alert("Walklist name can't be empty");
+      event.overlay.setMap(null); // remove polygon
+    } else {
+      var recIds = getPolygonIds(event.overlay);
+
+      if (recIds.length === 0) {
+        alert("No records found in polygon");
+        event.overlay.setMap(null); // remove polygon
+      } else {
+        // event listener for when shape is modified
+        // google.maps.event.addListener(event.overlay.getPath(), 'set_at', function(index, obj) {
+        //   alert('test');
+        //    
+        // });
+        createWalklist(walklistName, recIds);
+      }
+    }
   });
 
   drawingManager.setMap(map);
 }
 
-function updateSheet(info, data, poly) {
-  var hits = 0; // track number of rows inside polygon
+function getPolygonIds(polygon) {
+  var ids     = [];
+  var numRows = _info.CountRecords;
 
-  var numRows = info.CountRecords;
-  {
-    var t = $('<thead>').append($('<tr>'));
-    for (var i = 0; i < info.Columns.length; i++) {
-      var columnInfo = info.Columns[i];
-      var displayName = columnInfo.DisplayName;
-      var tCell1 = $('<td>').text(displayName);
-      t = t.append(tCell1);
-    }
-    $('#main').append(t);
-  }
-  for (var iRow = 0; iRow < numRows; iRow++) {
-    var recId = data["RecId"][iRow];
-    var lat   = data["Lat"][iRow];
-    var lng   = data["Long"][iRow];
+  for (var i = 0; i < numRows; i++) {
+    var id  = _data["RecId"][i];
+    var lat = _data["Lat"][i];
+    var lng = _data["Long"][i];
 
-    if (isInsidePolygon(lat, lng, poly)) {
-      hits++;
-
-      var t = $('<tr>');
-      for (var i = 0; i < info.Columns.length; i++) {
-        var columnInfo = info.Columns[i];
-        var columnData = data[columnInfo.Name];
-
-        var value = columnData[iRow];
-        var tcell = getCellContents(columnInfo, value, recId);
-        t = t.append(tcell);
-      }
-      $('#main').append(t);
+    if (isInsidePolygon(lat, lng, polygon)) {
+      ids.push(id);
     }
   }
 
-  updateNumResults(hits);
+  return ids;
 }
 
 // returns true if lat/lng coordinates are inside drawn polygon,
@@ -113,7 +195,3 @@ function isInsidePolygon(lat, lng, poly) {
   return result;
 }
 
-// shows number of returned rows
-function updateNumResults(num) {
-  $('#numRows').html(num);
-}
