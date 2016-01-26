@@ -59,7 +59,7 @@ function addPolyLine(coords, color) {
     geodesic: true,
     strokeColor: color,
     strokeOpacity: 1.0,
-    strokeWeight: 5
+    strokeWeight: 40
   });
 
   path.setMap(_map);
