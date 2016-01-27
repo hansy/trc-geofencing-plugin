@@ -2,6 +2,7 @@ var _sheet;
 var _info; 
 var _data;
 var _map;
+var _markers; // map markers
 
 function PluginMain(sheet) {
   _sheet = sheet;
@@ -10,8 +11,9 @@ function PluginMain(sheet) {
     _info = info;
 
     trcGetSheetContents(_sheet, function(data) {
-      _data = data;
-      _map  = initMap(_info.Latitute, _info.Longitude);
+      _data    = data;
+      _map     = initMap(_info.Latitute, _info.Longitude);
+      _markers = {};
 
       addMarkers();
       initDrawingManager(_map); // adds drawing capability to map
@@ -33,45 +35,47 @@ function addMarkers() {
     var lat   = _data["Lat"][i];
     var lng   = _data["Long"][i];
     
-    addMarker(lat, lng);
+    addMarker(lat, lng, recId);
   }
 }
 
 // Adds existing walklists to sidebar
 // Connects map markers via polyline that are in same walklist
 function initWalklist(children) {
-  for(var i=0; i < children.length; i++) {
-    var child   = children[i];
-    var name    = child.ChildInfo.Name;
-    var numRec  = child.ChildInfo.CountRecords;
-    var sheetId = child.SheetId;
-    var color   = randomColor();
+  var sheetRefs = [];
 
-    appendWalklist(name, numRec, color);
-    getChildCoords(child.SheetId, numRec, color);
+  for(var i=0; i < children.length; i++) {
+    var child    = children[i];
+    var name     = child.ChildInfo.Name;
+    var numRec   = child.ChildInfo.CountRecords;
+    var sheetId  = child.SheetId;
+    var color    = randomColor();
+    var sheetRef = trcGetSheetRef(sheetId, _sheet);
+    sheetRefs.push(sheetRef);
+
+    appendWalklist(name, sheetId, numRec, color);
+    renderPolylines(sheetId, numRec, color);
   }
 }
 
-// creates polyline connecting map markers
-function addPolyLine(coords, color) {
-  var path = new google.maps.Polyline({
+function addPolyline(coords, color) {
+  var polyline = new google.maps.Polyline({
     path: coords,
-    geodesic: true,
     strokeColor: color,
-    strokeOpacity: 1.0,
     strokeWeight: 40
   });
 
-  path.setMap(_map);
+  polyline.setMap(_map);
 }
 
-// get coordiates (latitude, longitude) from child records
-function getChildCoords(sheetId, numRec, color) {
+// creates polylines connecting map markers
+function renderPolylines(sheetId, numRec, color) {
   var childSheetRef = trcGetSheetRef(sheetId, _sheet);
 
   trcGetSheetContents(childSheetRef, function(data) {
     var coords = [];
 
+    // get coordiates (latitude, longitude) from child records
     for(var i=0; i < numRec; i++) {
       var lat    = data["Lat"][i];
       var lng    = data["Long"][i];
@@ -79,32 +83,134 @@ function getChildCoords(sheetId, numRec, color) {
       coords.push(latlng);
     }
 
-    addPolyLine(coords, color);
+    updateMarkersWithSheetId(data["RecId"], sheetId)
+    addPolyline(coords, color);
   });
 }
 
 // adds map marker based on last/lng
-function addMarker(lat, lng) {
+function addMarker(lat, lng, recId) {
   var latLng = new google.maps.LatLng(lat, lng);
   var marker = new google.maps.Marker({
     position: latLng,
-    map: _map
+    map: _map,
+    id: recId,
+    sheetId: ""
+  });
+
+  _markers[recId] = marker;
+}
+
+// event listeners for when polygon shape is modified
+function addPolygonResizeEvents(polygon, sheetId) {
+  google.maps.event.addListener(polygon.getPath(), 'set_at', function() {
+    updateWalklist(getPolygonIds(polygon), sheetId);
+  });
+
+  google.maps.event.addListener(polygon.getPath(), 'insert_at', function () {
+    updateWalklist(getPolygonIds(polygon), sheetId);
   });
 }
 
-// create walklist
-function createWalklist(name, ids) {
-  trcCreateChildSheet(_sheet, name, ids, function(childSheetRef) {
-    var color = randomColor();
+// add child sheet id to markers with lat/lng inside walklist
+function updateMarkersWithSheetId(ids, sheetId) {
+  var total = ids.length;
 
-    appendWalklist(name, ids.length, color);
-    getChildCoords(childSheetRef.SheetId, ids.length, color);
+  for (var i = 0; i < total; i++) {
+    var id = ids[i];
+    _markers[id].sheetId = sheetId;
+  }
+}
+
+function createWalklist(name, ids, polygon) {
+  trcCreateChildSheet(_sheet, name, ids, function(childSheetRef) {
+    var color   = randomColor();
+    var sheetId = childSheetRef.SheetId;
+
+    addPolygonResizeEvents(polygon, sheetId);
+    fillPolygon(polygon, color);
+    appendWalklist(name, sheetId, ids.length, color);
+    updateMarkersWithSheetId(ids, sheetId);
   });
+}
+
+function fillPolygon(polygon, color) {
+  polygon.setOptions({ 
+    fillColor: color,
+    fillOpacity: 1 
+  });
+}
+
+function updateWalklist(ids, sheetId) {
+  trcPatchChildSheetRecIds(_sheet, sheetId, ids, function() {
+    updateRecordNum(sheetId, ids.length);
+  });
+}
+
+// update the number of records within a drawn polygon
+function updateRecordNum(sheetId, count) {
+  var td = $("#"+sheetId+" td.record-count");
+  td.html(count);
+}
+
+// get color of polyline associated with walklist
+// returns color in hexadecimal
+function getColor(sheetId) {
+  var tr    = $("#"+sheetId);
+  var style = tr.attr('style'); // e.g. border-left: 10px solid #FFF
+  var color = style.match(/#\w+/);
+
+  return color;
 }
 
 // add walklist to sidebar
-function appendWalklist(name, count, color) {
-  $('#walklists').append("<tr style='border-left: 10px solid "+color+"'><td>"+name+"</td><td>"+count+"</td></tr>")
+function appendWalklist(name, sheetId, count, color) {
+  var tr = document.createElement('tr');
+  tr.setAttribute('style', 'border-left: 10px solid ' + color);
+  tr.setAttribute('id', sheetId);
+
+  var tdName = document.createElement('td');
+  tdName.innerHTML = name;
+  tr.appendChild(tdName);
+
+  var tdCount = document.createElement('td');
+  tdCount.innerHTML = count;
+  tdCount.setAttribute('class', 'record-count');
+  tr.appendChild(tdCount);
+
+  var tdCheckbox = document.createElement('td');
+  var checkbox   = document.createElement('input');
+  checkbox.setAttribute('type', 'checkbox');
+  checkbox.onclick = assignedCheckboxClickFx(sheetId);
+  tdCheckbox.appendChild(checkbox);
+  tr.appendChild(tdCheckbox);
+
+  var walklistsEl = document.getElementById('walklists');
+  var tbody       = walklistsEl.getElementsByTagName('tbody')[0];
+
+  tbody.appendChild(tr);
+
+  // $('#walklists').append("<tr style='border-left: 10px solid "+color+"' id='"+sheetId+"'><td>"+name+"</td><td>"+count+"</td><td><input type='checkbox'></td></tr>")
+}
+
+// function to be returned in the event a checkbox is clicked
+function assignedCheckboxClickFx(sheetId) {
+  return function(event) {
+    if (this.checked) {
+      setMarkersOpacity(sheetId, 0.2);
+    } else {
+      setMarkersOpacity(sheetId, 1);
+    }
+  }
+}
+
+function setMarkersOpacity(sheetId, opacity) {
+  for (id in _markers) {
+    var marker = _markers[id];
+    if (marker.sheetId === sheetId) {
+      marker.setOpacity(opacity);
+    }
+  }
 }
 
 // Initialize Google Map
@@ -146,7 +252,7 @@ function initDrawingManager(map) {
   google.maps.event.addListener(drawingManager, 'overlaycomplete', function(event) {
     var walklistName = prompt("Name of walklist");
 
-    if (walklistName === undefined || walklistName === "") {
+    if (walklistName === null || walklistName === "") {
       alert("Walklist name can't be empty");
       event.overlay.setMap(null); // remove polygon
     } else {
@@ -156,12 +262,7 @@ function initDrawingManager(map) {
         alert("No records found in polygon");
         event.overlay.setMap(null); // remove polygon
       } else {
-        // event listener for when shape is modified
-        // google.maps.event.addListener(event.overlay.getPath(), 'set_at', function(index, obj) {
-        //   alert('test');
-        //    
-        // });
-        createWalklist(walklistName, recIds);
+        createWalklist(walklistName, recIds, event.overlay);
       }
     }
   });
@@ -169,6 +270,7 @@ function initDrawingManager(map) {
   drawingManager.setMap(map);
 }
 
+// return rec ids within a polygon
 function getPolygonIds(polygon) {
   var ids     = [];
   var numRows = _info.CountRecords;
@@ -194,4 +296,3 @@ function isInsidePolygon(lat, lng, poly) {
   var result = google.maps.geometry.poly.containsLocation(coords, poly);
   return result;
 }
-
