@@ -250,19 +250,22 @@ function initDrawingManager(map) {
 
   // add event listener for when shape is drawn
   google.maps.event.addListener(drawingManager, 'overlaycomplete', function(event) {
-    var walklistName = prompt("Name of walklist");
+    var polygon = event.overlay;
+    var recIds  = getPolygonIds(polygon);
 
-    if (walklistName === null || walklistName === "") {
-      alert("Walklist name can't be empty");
-      event.overlay.setMap(null); // remove polygon
-    } else {
-      var recIds = getPolygonIds(event.overlay);
-
-      if (recIds.length === 0) {
+    if (recIds.length === 0) {
         alert("No records found in polygon");
         event.overlay.setMap(null); // remove polygon
+    } else {
+      var walklistName = prompt("Name of walklist");
+
+      if (walklistName === null) {
+        event.overlay.setMap(null); // remove polygon
+      } else if (walklistName === "") {
+        alert("Walklist name can't be empty");
+        event.overlay.setMap(null);
       } else {
-        createWalklist(walklistName, recIds, event.overlay);
+        createWalklist(walklistName, recIds, polygon); 
       }
     }
   });
