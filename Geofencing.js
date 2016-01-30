@@ -2,7 +2,8 @@ var _sheet;
 var _info; 
 var _data;
 var _map;
-var _markers; // map markers
+var _markers; // map markers; { recId: marker }
+var _polygons; //polylines/polygons; { sheetId: polygon/polyline }
 
 function PluginMain(sheet) {
   _sheet = sheet;
@@ -11,9 +12,10 @@ function PluginMain(sheet) {
     _info = info;
 
     trcGetSheetContents(_sheet, function(data) {
-      _data    = data;
-      _map     = initMap(_info.Latitute, _info.Longitude);
-      _markers = {};
+      _data     = data;
+      _map      = initMap(_info.Latitute, _info.Longitude);
+      _markers  = {};
+      _polygons = {};
 
       addMarkers();
       initDrawingManager(_map); // adds drawing capability to map
@@ -66,6 +68,8 @@ function addPolyline(coords, color) {
   });
 
   polyline.setMap(_map);
+
+  return polyline;
 }
 
 // creates polylines connecting map markers
@@ -84,7 +88,8 @@ function renderPolylines(sheetId, numRec, color) {
     }
 
     updateMarkersWithSheetId(data["RecId"], sheetId)
-    addPolyline(coords, color);
+    polyline = addPolyline(coords, color, sheetId);
+    globallyAddPolygon(polyline, sheetId);
   });
 }
 
@@ -129,9 +134,15 @@ function createWalklist(name, ids, polygon) {
 
     addPolygonResizeEvents(polygon, sheetId);
     fillPolygon(polygon, color);
+    globallyAddPolygon(polygon, sheetId);
     appendWalklist(name, sheetId, ids.length, color);
     updateMarkersWithSheetId(ids, sheetId);
   });
+}
+
+// adds polygon/polyline to global var _polygons
+function globallyAddPolygon(polygon, sheetId) {
+  _polygons[sheetId] = polygon;
 }
 
 function fillPolygon(polygon, color) {
@@ -169,21 +180,31 @@ function appendWalklist(name, sheetId, count, color) {
   tr.setAttribute('style', 'border-left: 10px solid ' + color);
   tr.setAttribute('id', sheetId);
 
+  // add name column
   var tdName = document.createElement('td');
   tdName.innerHTML = name;
   tr.appendChild(tdName);
 
+  // add record count column
   var tdCount = document.createElement('td');
   tdCount.innerHTML = count;
   tdCount.setAttribute('class', 'record-count');
   tr.appendChild(tdCount);
 
+  // add assigned checkbox column
   var tdCheckbox = document.createElement('td');
   var checkbox   = document.createElement('input');
   checkbox.setAttribute('type', 'checkbox');
   checkbox.onclick = assignedCheckboxClickFx(sheetId);
   tdCheckbox.appendChild(checkbox);
   tr.appendChild(tdCheckbox);
+
+  // add delete column
+  var tdDelete = document.createElement('td');
+  tdDelete.innerHTML = "x";
+  tdDelete.setAttribute('class', 'delete-walklist-btn');
+  tdDelete.onclick = deleteWalklistClickFx(sheetId);
+  tr.appendChild(tdDelete);
 
   var walklistsEl = document.getElementById('walklists');
   var tbody       = walklistsEl.getElementsByTagName('tbody')[0];
@@ -198,8 +219,48 @@ function assignedCheckboxClickFx(sheetId) {
   return function(event) {
     if (this.checked) {
       setMarkersOpacity(sheetId, 0.2);
+      setPolygonOpacity(sheetId, 0.2);
     } else {
       setMarkersOpacity(sheetId, 1);
+      setPolygonOpacity(sheetId, 1);
+    }
+  }
+}
+
+// function to be returned when delete 'x' is clicked
+function deleteWalklistClickFx(sheetId) {
+  return function(event) {
+    var remove = confirm("Do you wish to delete this walklist?");
+
+    if (remove) {
+      trcDeleteChildSheet(_sheet, sheetId, function() {
+        removeWalklist(sheetId);
+        removeGlobalPolygon(sheetId);
+        removeMarkerSheetId(sheetId);
+      });
+    }
+  }
+}
+
+// remove polygon/polyline from global var _polygons
+function removeGlobalPolygon(sheetId) {
+  var polygon = _polygons[sheetId];
+  polygon.setMap(null);
+  delete _polygons[sheetId];
+}
+
+// remove walklist from sidebar
+function removeWalklist(sheetId) {
+  var tr = document.getElementById(sheetId);
+  tr.parentNode.removeChild(tr);
+}
+
+// unassign marker from child sheet
+function removeMarkerSheetId(sheetId) {
+  for (id in _markers) {
+    var marker = _markers[id];
+    if (marker.sheetId === sheetId) {
+      marker.sheetId = "";
     }
   }
 }
@@ -211,6 +272,11 @@ function setMarkersOpacity(sheetId, opacity) {
       marker.setOpacity(opacity);
     }
   }
+}
+
+function setPolygonOpacity(sheetId, opacity) {
+  var polygon = _polygons[sheetId];
+  polygon.setOptions({ strokeOpacity: opacity });
 }
 
 // Initialize Google Map

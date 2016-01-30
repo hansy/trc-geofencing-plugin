@@ -22,3 +22,8 @@ section {
   border-bottom: none;
 }
 
+.delete-walklist-btn {
+  cursor: pointer;
+  color: red;
+}
+
